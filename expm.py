@@ -14,37 +14,47 @@
 
 import petsc4py
 import sys
-from matplotlib import pylab
 
 petsc4py.init(sys.argv)
 from petsc4py import PETSc
 
-nq = 4
+import scipy
+from scipy import linalg
+
+nq = 2
 
 psi = PETSc.Vec().create()
 psi.setSizes(2**nq)
 psi.setType('seq') 
+psi.set(1)
 psi.assemblyBegin()
 psi.assemblyEnd()
 # But maybe make it 'mpi', 'standard', etc. later
 # See: http://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Vec/VecType.html#VecType
 
-ident = PETSc.Vec().create()
-ident.setSizes(2**nq)
-ident.setType('seq')
-ident.set(1) # Set everything to ones
-ident.assemblyBegin()
-ident.assemblyEnd()
+ones = PETSc.Vec().create()
+ones.setSizes(2**nq)
+ones.setType('seq')
+ones.set(1) # Set everything to ones
+ones.assemblyBegin()
+ones.assemblyEnd()
 
 H = PETSc.Mat().createDense([2**nq, 2**nq])
-H.setDiagonal(ident)
+H.zeroEntries()
+H.setDiagonal(ones)
 H.assemblyBegin()
 H.assemblyEnd()
 
+eye = PETSc.Mat().createDense([2**nq, 2**nq])
+eye.setDiagonal(ones)
+eye.assemblyBegin()
+eye.assemblyEnd()
+
 # Check it out bro
 print (psi.getValues(range(2**nq)))
-print (ident.getValues(range(2**nq)))
+print (ones.getValues(range(2**nq)))
 print (H.getValues(range(2**nq), range(2**nq)))
+print (eye.getValues(range(2**nq), range(2**nq)))
 
 #### Do the matrix exponential ####
 #
@@ -72,14 +82,14 @@ def pade9(A, eye, n):
     A4.matMult(A2, A6)
     A6.matMult(A2, A8)
 
-    U.axpy(ident, b[1])
+    U.axpy(b[1], eye)
     U.axpy(b[3], A2)
     U.axpy(b[5], A4)
     U.axpy(b[7], A6)
     U.axpy(b[9], A8)
     U = A.matMult(U)
 
-    V.axpy(ident, b[0])
+    V.axpy(b[0], eye)
     V.axpy(b[2], A2)
     V.axpy(b[4], A4)
     V.axpy(b[6], A6)
@@ -87,69 +97,41 @@ def pade9(A, eye, n):
 
     return U, V
 
-
 U = PETSc.Mat().createDense([2**nq, 2**nq])
 V = PETSc.Mat().createDense([2**nq, 2**nq])
 P = PETSc.Mat().createDense([2**nq, 2**nq])
 Q = PETSc.Mat().createDense([2**nq, 2**nq])
+R = PETSc.Mat().createDense([2**nq, 2**nq])
 
-U, V = pade9(H, ident, nq)
+U, V = pade9(H, eye, 2**nq)
 
-P = U.axpy(1.0, V)
-Q = V.axpy(-1.0, U)
+print (U.getValues(range(2**nq), range(2**nq)))
+print (V.getValues(range(2**nq), range(2**nq)))
 
-# Initialize ksp solver.
-ksp = PETSc.KSP().create()
-ksp.setOperators(A)
+# Construct P = U + V
+U.copy(P)
+P.axpy(1.0, V)
 
-# Allow for solver choice to be set from command line with -ksp_type <solver>.
-ksp.setFromOptions()
-print 'Solving with:', ksp.getType()
+# Construct Q = V - U
+V.copy(Q)
+Q.axpy(-1.0, U)
 
-# Solve!
-ksp.solve(b, x)
+print (P.getValues(range(2**nq), range(2**nq)))
+print (Q.getValues(range(2**nq), range(2**nq)))
 
-# Print results.
-print 'Converged in', ksp.getIterationNumber(), 'iterations.'
+P.assemblyBegin()
+P.assemblyEnd()
+Q.assemblyBegin()
+Q.assemblyEnd()
+R.assemblyBegin()
+R.assemblyEnd()
 
+Q.matSolve(P, R)
 
+print ("PETSc version")
+print (R.getValues(range(2**nq), range(2**nq)))
 
-
-
-# Create the rhs vector b.
-b = PETSc.Vec().createSeq(n) 
-b.setValue(0, 1) # Set value of first element to 1.
-
-# Create solution vector x.
-x = PETSc.Vec().createSeq(n)
-
-# Create the wave equation matrix.
-A = PETSc.Mat().createAIJ([n, n], nnz=3) # nnz=3 since the matrix will be tridiagonal.
-
-# Insert values (the matrix is tridiagonal).
-A.setValue(0, 0, 2. - w**2)
-for k in range(1, n):
-    A.setValue(k, k, 2. - w**2) # Diagonal.
-    A.setValue(k-1, k, -1.) # Off-diagonal.
-    A.setValue(k, k-1, -1.) # Off-diagonal.
-
-A.assemblyBegin() # Make matrices useable.
-A.assemblyEnd()
-
-# Initialize ksp solver.
-ksp = PETSc.KSP().create()
-ksp.setOperators(A)
-
-# Allow for solver choice to be set from command line with -ksp_type <solver>.
-ksp.setFromOptions()
-print 'Solving with:', ksp.getType()
-
-# Solve!
-ksp.solve(b, x)
-
-# Print results.
-print 'Converged in', ksp.getIterationNumber(), 'iterations.'
-
-# # Use this to plot the solution (should look like a sinusoid).
-# pylab.plot(x.getArray())
-# pylab.show()
+# Test against SciPy solver
+T = scipy.identity(nq)
+print ("SciPy version")
+print (scipy.linalg.expm(T))
