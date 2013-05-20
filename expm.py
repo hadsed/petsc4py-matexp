@@ -4,7 +4,7 @@ File: expm.py
 Author: Hadayat Seddiqi                                                         
 Date: 5.17.13                                                                    
 Description: Implementation of the matrix exponential using
-             the Pade approximation. See:
+             the Pade approximation with petsc4py. See:
 
              N. J. Higham, "The Scaling and Squaring Method for the 
              Matrix Exponential Revisited", SIAM. J. Matrix Anal. & 
@@ -14,23 +14,38 @@ Description: Implementation of the matrix exponential using
 
 
 import sys, petsc4py, scipy
-petsc4py.init(sys.argv)
 from petsc4py import PETSc
 from scipy import linalg
+import math as math
+import numpy as np
 
-def expm(A):
+def expm(A, k):
+    ones = PETSc.Vec().create()
+    ones.setSizes(n)
+    ones.setType('seq')
+    ones.set(1)
+
+    eye = PETSc.Mat().createDense([n, n])
+    eye.setDiagonal(ones)
+
+    A1 = PETSc.Vec().create()
+    A1.setSizes(n)
+    A1.setType('seq')
+    A1.set(0)
+
     n_squarings = 0
 
+    # Take the L1-norm (abs values, sum columns, pick max)
     A.transpose(A)
-    A.matMult(ones, A1)
-    A_L1 = A1.max()
-    print ("L1 norm: ")
-    print (A_L1)
+    A1 = A*ones
+    pos, A_L1 = A1.max()
+    A.transpose(A) ######################################## This is stupid, fix
+    print ("L1 Norm: ", A_L1)
 
     U = PETSc.Mat().createDense([n, n])
     V = PETSc.Mat().createDense([n, n])
 
-    if A.dtype == 'float64' or A.dtype == 'complex128':
+    if k: #A.dtype == 'float64' or A.dtype == 'complex128':
         if A_L1 < 1.495585217958292e-002:
             U,V = _pade3(A, eye, n)
         elif A_L1 < 2.539398330063230e-001:
@@ -41,21 +56,21 @@ def expm(A):
             U,V = _pade9(A, eye, n)
         else:
             maxnorm = 5.371920351148152
-            n_squarings = max(0, int(ceil(log2(A_L1 / maxnorm))))
-            A = A / 2**n_squarings
+            n_squarings = max(0, int(np.ceil(np.log2(A_L1 * (1.0/maxnorm) ))))
+            A = A * (1.0/2**n_squarings)
             U,V = _pade13(A, eye, n)
-    elif A.dtype == 'float32' or A.dtype == 'complex64':
+    elif not k: #A.dtype == 'float32' or A.dtype == 'complex64':
         if A_L1 < 4.258730016922831e-001:
             U,V = _pade3(A, eye, n)
         elif A_L1 < 1.880152677804762e+000:
             U,V = _pade5(A, eye, n)
         else:
             maxnorm = 3.925724783138660
-            n_squarings = max(0, int(ceil(log2(A_L1 / maxnorm))))
-            A = A / 2**n_squarings
+            n_squarings = max(0, int(np.ceil(np.log2(A_L1 * (1.0/maxnorm) ))))
+            A = A * (1.0/2**n_squarings)
             U,V = _pade7(A, eye, n)
     else:
-        raise ValueError("invalid type: "+str(A.dtype))
+        raise ValueError("invalid type")
 
     P = PETSc.Mat().createDense([n, n])
     Q = PETSc.Mat().createDense([n, n])
@@ -72,8 +87,11 @@ def expm(A):
     cperm, rperm = Q.getOrdering('natural')
     Q.factorLU(cperm, rperm)
     Q.matSolve(P, R)
-    Q.setUnfactored()
-    
+    #Q.setUnfactored()
+
+    # Rescale
+    for i in range(n_squarings): R = R.matMult(R)
+
     return R
 
 def _pade3(A, eye, n):
@@ -94,7 +112,7 @@ def _pade3(A, eye, n):
 
     V.axpy(b[0], eye)
     V.axpy(b[2], A2)
-
+    print ("Invoked _pade3")
     return U, V
 
 def _pade5(A, eye, n):
@@ -119,7 +137,7 @@ def _pade5(A, eye, n):
     V.axpy(b[0], eye)
     V.axpy(b[2], A2)
     V.axpy(b[4], A4)
-
+    print ("Invoked _pade5")
     return U, V
 
 def _pade7(A, eye, n):
@@ -137,7 +155,6 @@ def _pade7(A, eye, n):
     A.matMult(A, A2)
     A2.matMult(A2, A4)
     A4.matMult(A2, A6)
-    A6.matMult(A2, A8)
 
     U.axpy(b[1], eye)
     U.axpy(b[3], A2)
@@ -147,9 +164,9 @@ def _pade7(A, eye, n):
 
     V.axpy(b[0], eye)
     V.axpy(b[2], A2)
-    V.axpy(b[4], A4)
+    V.axpy(b[4], A4) 
     V.axpy(b[6], A6)
-
+    print ("Invoked _pade7")
     return U,V
 
 def _pade9(A, eye, n):
@@ -182,7 +199,7 @@ def _pade9(A, eye, n):
     V.axpy(b[2], A2)
     V.axpy(b[4], A4)
     V.axpy(b[6], A6)
-
+    print ("Invoked _pade9")
     return U, V
 
 def _pade13(A, eye, n):
@@ -219,43 +236,37 @@ def _pade13(A, eye, n):
     V.axpy(b[2], A2)
     V.axpy(b[4], A4)
     V.axpy(b[6], A6)
-
+    print ("Invoked _pade13")
     return U, V
 
 
 
+# Test it all out
 n = 4
+k = 0
+scale = 9
 
-ones = PETSc.Vec().create()
-ones.setSizes(n)
-ones.setType('mpi')
-ones.set(1) # Set everything to ones
+#petsc4py.init(sys.argv)
 
 diag = PETSc.Vec().create()
 diag.setSizes(n)
 diag.setType('mpi')
-diag.set(2)
+diag.set(scale)
 
+hvals = scipy.ones(n**2)*scale
 H = PETSc.Mat().createDense([n, n])
 H.setDiagonal(diag)
+H.setValues(range(n), range(n), hvals)
+H.assemblyBegin()
+H.assemblyEnd()
 
-eye = PETSc.Mat().createDense([n, n])
-eye.setDiagonal(ones)
-
-# Check it out bro
-print("Ones: ")
-print(ones.getValues(range(n)))
-print("Diag: ")
-print(diag.getValues(range(n)))
-print("H: ")
-print(H.getValues(range(n), range(n)))
-print("Eye: ")
-print(eye.getValues(range(n), range(n)))
-
+# Do matrix exponential with PETSc
+R = expm(H, k)
 print ("PETSc expm")
-print (R.getValues(range(n), range(n)))
+print(R.getValues(range(n), range(n)))
 
 # Test against SciPy solver
-T = scipy.identity(n)*2.0
+#T = scipy.identity(n)*scale
+T = scipy.ones((n,n))*scale
 print ("SciPy expm")
 print (scipy.linalg.expm(T))
