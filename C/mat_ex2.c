@@ -1,7 +1,7 @@
 #include "petscksp.h"
 #include "petscmath.h"
 #include "petscvec.h"
-
+#include <stdio.h>
 #include "petscmat.h"
 #undef __FUNCT__
 #define __FUNCT__ "main"
@@ -46,25 +46,19 @@ int pade9(Mat A, Mat Eye, PetscInt n, Mat U, Mat V)
   
   ierr = MatMatMult(A,A,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&A2);CHKERRQ(ierr); 
   ierr = MatMatMult(A2,A2,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&A4);CHKERRQ(ierr); 
- 
   ierr = MatMatMult(A4,A2,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&A6);CHKERRQ(ierr); 
-
   ierr = MatMatMult(A6,A2,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&A8);CHKERRQ(ierr); 
 
 
   ierr = MatAXPY(U,b[1],Eye,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
-
   ierr = MatAXPY(U,b[3],A2,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
-
   ierr = MatAXPY(U,b[5],A4,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
-
   ierr = MatAXPY(U,b[7],A6,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
-
   ierr = MatAXPY(U,b[9],A8,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
 
-  ierr = MatMatMult(A,U,MAT_REUSE_MATRIX,PETSC_DEFAULT,&U);CHKERRQ(ierr); 
-//ierr = MatMatMult(A,U,MAT_REUSE_MATRIX,PETSC_DEFAULT,&Prod);CHKERRQ(ierr); 
-//ierr = MatCopy(Prod,U,DIFFERENT_NONZERO_PATTERN);
+//ierr = MatMatMult(A,U,MAT_REUSE_MATRIX,PETSC_DEFAULT,&U);CHKERRQ(ierr); 
+  ierr = MatMatMult(A,U,MAT_REUSE_MATRIX,PETSC_DEFAULT,&Prod);CHKERRQ(ierr); 
+  ierr = MatCopy(Prod,U,DIFFERENT_NONZERO_PATTERN);
   ierr = MatAXPY(V,b[0],Eye,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
   ierr = MatAXPY(V,b[2],A2,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
   ierr = MatAXPY(V,b[4],A4,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr); 
@@ -144,6 +138,12 @@ int main(int argc, char **args)
 
   pade9(Eye,Eye,nq,U,V);
 
+  printf("U\n");  
+  ierr = MatView(U,PETSC_VIEWER_STDOUT_SELF);
+
+  printf("V\n");  
+  ierr = MatView(V,PETSC_VIEWER_STDOUT_SELF);
+
   ierr = MatCreateDense(PETSC_COMM_WORLD,PETSC_DECIDE,PETSC_DECIDE,nq,nq,PETSC_NULL,&P); 
   ierr = MatCreateDense(PETSC_COMM_WORLD,PETSC_DECIDE,PETSC_DECIDE,nq,nq,PETSC_NULL,&Q); 
   ierr = MatCreateDense(PETSC_COMM_WORLD,PETSC_DECIDE,PETSC_DECIDE,nq,nq,PETSC_NULL,&R); 
@@ -155,14 +155,16 @@ int main(int argc, char **args)
   ierr = MatAXPY(Q,-1.0,U,DIFFERENT_NONZERO_PATTERN);
 
   ierr = MatGetOrdering(Q,MATORDERINGNATURAL,&rperm,&cperm);
-  
+  printf("P\n");  
   ierr = MatView(P,PETSC_VIEWER_STDOUT_SELF);
+  printf("Q\n");  
   ierr = MatView(Q,PETSC_VIEWER_STDOUT_SELF);
 
   ierr = MatFactorInfoInitialize(&info);
   ierr = MatLUFactor(Q,rperm,cperm,&info);
   ierr = MatMatSolve(Q,P,R);
 
+  printf("R\n");  
   ierr = MatView(R,PETSC_VIEWER_STDOUT_SELF);
 
 
