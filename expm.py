@@ -20,26 +20,12 @@ import math as math
 import numpy as np
 
 def expm(A, k):
-    ones = PETSc.Vec().create()
-    ones.setSizes(n)
-    ones.setType('seq')
-    ones.set(1)
-
     eye = PETSc.Mat().createDense([n, n])
     eye.setDiagonal(ones)
 
-    A1 = PETSc.Vec().create()
-    A1.setSizes(n)
-    A1.setType('seq')
-    A1.set(0)
-
     n_squarings = 0
 
-    # Take the L1-norm (abs values, sum columns, pick max)
-    A.transpose(A)
-    A1 = A*ones
-    pos, A_L1 = A1.max()
-    A.transpose(A) ######################################## This is stupid, fix
+    A_L1 = A.norm(0)
     print ("L1 Norm: ", A_L1)
 
     U = PETSc.Mat().createDense([n, n])
@@ -245,18 +231,19 @@ def _pade13(A, eye, n):
 n = 4
 k = 0
 scale = 9
+dia = 1.323
 
 #petsc4py.init(sys.argv)
 
 diag = PETSc.Vec().create()
 diag.setSizes(n)
 diag.setType('mpi')
-diag.set(scale)
+diag.set(scale*dia)
 
 hvals = scipy.ones(n**2)*scale
 H = PETSc.Mat().createDense([n, n])
-H.setDiagonal(diag)
 H.setValues(range(n), range(n), hvals)
+H.setDiagonal(diag)
 H.assemblyBegin()
 H.assemblyEnd()
 
@@ -268,5 +255,6 @@ print(R.getValues(range(n), range(n)))
 # Test against SciPy solver
 #T = scipy.identity(n)*scale
 T = scipy.ones((n,n))*scale
+scipy.fill_diagonal(T, scale*dia)
 print ("SciPy expm")
 print (scipy.linalg.expm(T))
