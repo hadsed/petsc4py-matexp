@@ -20,16 +20,23 @@ import math as math
 import numpy as np
 
 def expm(A, k):
+    n = A.getSizes()[0]
+
+    ones = PETSc.Vec().create()
+    ones.setSizes(n)
+    ones.setType('seq')
+    ones.set(1)
+
     eye = PETSc.Mat().createDense([n, n])
     eye.setDiagonal(ones)
+
+    # Don't need this guy
+    ones.destroy()
 
     n_squarings = 0
 
     A_L1 = A.norm(0)
     print ("L1 Norm: ", A_L1)
-
-    U = PETSc.Mat().createDense([n, n])
-    V = PETSc.Mat().createDense([n, n])
 
     if k: #A.dtype == 'float64' or A.dtype == 'complex128':
         if A_L1 < 1.495585217958292e-002:
@@ -58,6 +65,9 @@ def expm(A, k):
     else:
         raise ValueError("invalid type")
 
+    # Don't need you anymore
+    eye.destroy()
+
     P = PETSc.Mat().createDense([n, n])
     Q = PETSc.Mat().createDense([n, n])
     R = PETSc.Mat().createDense([n, n])
@@ -69,11 +79,19 @@ def expm(A, k):
     # Construct Q = V - U
     V.copy(Q)
     Q.axpy(-1.0, U)
+
+    # Be free!
+    U.destroy()
+    V.destroy()
     
     cperm, rperm = Q.getOrdering('natural')
     Q.factorLU(cperm, rperm)
     Q.matSolve(P, R)
     #Q.setUnfactored()
+
+    # It's good practice, really
+    P.destroy()
+    Q.destroy()
 
     # Rescale
     for i in range(n_squarings): R = R.matMult(R)
@@ -231,16 +249,18 @@ def _pade13(A, eye, n):
 n = 4
 k = 0
 scale = 9
-dia = 1.323
+sd = 1.323
 
 #petsc4py.init(sys.argv)
 
+#diag = PETSc.Vec().create(PETSc.COMM_WORLD)
 diag = PETSc.Vec().create()
 diag.setSizes(n)
 diag.setType('mpi')
-diag.set(scale*dia)
+diag.set(scale*sd)
 
 hvals = scipy.ones(n**2)*scale
+
 H = PETSc.Mat().createDense([n, n])
 H.setValues(range(n), range(n), hvals)
 H.setDiagonal(diag)
@@ -255,6 +275,6 @@ print(R.getValues(range(n), range(n)))
 # Test against SciPy solver
 #T = scipy.identity(n)*scale
 T = scipy.ones((n,n))*scale
-scipy.fill_diagonal(T, scale*dia)
+scipy.fill_diagonal(T, scale*sd)
 print ("SciPy expm")
 print (scipy.linalg.expm(T))
