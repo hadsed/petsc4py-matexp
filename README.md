@@ -1,3 +1,8 @@
+This repo was forked from JesseLu's tutorial repo. I've been using it as a 
+sort of testing area for implementation of the matrix exponential with PETSc.
+The python version is expm.py, and a C version is in the works.
+
+
 Purpose
 =======
 
